@@ -6,14 +6,14 @@ use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use laconic_ot::{Choice, CommitmentKey, LaconicOTRecv, LaconicOTSender};
 
 const MIN_LOG_SIZE: usize = 3;
-const MAX_LOG_SIZE: usize = 5;
+const MAX_LOG_SIZE: usize = 18;
 
 fn laconic_ot_benchmarks(c: &mut Criterion) {
     let name = "laconic_ot";
 
     let mut commit_benchmarks = c.benchmark_group(format!("{0}/commit", name));
     commit_benchmarks.sample_size(10);
-    for log_len in MIN_LOG_SIZE..MAX_LOG_SIZE {
+    for log_len in MIN_LOG_SIZE..=MAX_LOG_SIZE {
         commit_benchmarks.bench_with_input(
             BenchmarkId::from_parameter(log_len),
             &log_len,
@@ -39,7 +39,7 @@ fn laconic_ot_benchmarks(c: &mut Criterion) {
     commit_benchmarks.finish();
 
     let mut send_benchmarks = c.benchmark_group(format!("{0}/send", name));
-    for log_len in MIN_LOG_SIZE..MAX_LOG_SIZE {
+    for log_len in MIN_LOG_SIZE..=MAX_LOG_SIZE {
         let rng = &mut test_rng();
         let num = 1 << log_len;
 
@@ -66,7 +66,7 @@ fn laconic_ot_benchmarks(c: &mut Criterion) {
 
     let mut recv_benchmarks = c.benchmark_group(format!("{0}/recv", name));
 
-    for log_len in MIN_LOG_SIZE..MAX_LOG_SIZE {
+    for log_len in MIN_LOG_SIZE..=MAX_LOG_SIZE {
         let rng = &mut test_rng();
         let num = 1 << log_len;
 
