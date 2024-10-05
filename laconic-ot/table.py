@@ -5,7 +5,7 @@ import tabulate
 from fractions import Fraction
 
 PATH = "target/criterion"
-SIZES = list(range(3, 19))
+SIZES = list(range(3, 10))
 SUB_DIRS = [
     ("Hash (Time)", "laconic_ot_commit"),
     ("Send (Time)", "laconic_ot_send"),

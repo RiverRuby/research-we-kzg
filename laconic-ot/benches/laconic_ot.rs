@@ -1,4 +1,5 @@
 use ark_bls12_381::{Bls12_381, Fr};
+use ark_ec::pairing::Pairing;
 use ark_poly::Radix2EvaluationDomain;
 use ark_std::rand::Rng;
 use ark_std::test_rng;
@@ -6,7 +7,7 @@ use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use laconic_ot::{Choice, CommitmentKey, LaconicOTRecv, LaconicOTSender};
 
 const MIN_LOG_SIZE: usize = 3;
-const MAX_LOG_SIZE: usize = 18;
+const MAX_LOG_SIZE: usize = 10;
 
 fn laconic_ot_benchmarks(c: &mut Criterion) {
     let name = "laconic_ot";
@@ -38,7 +39,7 @@ fn laconic_ot_benchmarks(c: &mut Criterion) {
     }
     commit_benchmarks.finish();
 
-    let mut send_benchmarks = c.benchmark_group(format!("{0}/send", name));
+    let mut send_benchmarks = c.benchmark_group(format!("{0}/send_all", name));
     for log_len in MIN_LOG_SIZE..=MAX_LOG_SIZE {
         let rng = &mut test_rng();
         let num = 1 << log_len;
@@ -56,15 +57,23 @@ fn laconic_ot_benchmarks(c: &mut Criterion) {
 
         send_benchmarks.bench_with_input(BenchmarkId::from_parameter(log_len), &log_len, |b, _| {
             b.iter(|| {
-                let i = rng.gen_range(0..num);
                 let sender = LaconicOTSender::new(&ck, recv.commitment());
-                let _msg = sender.send(rng, i, m0, m1);
+                // precompute pairing
+                let l0 = recv.commitment();
+                let l1 = recv.commitment() - ck.u[0];
+
+                // m0, m1
+                let com0 = Bls12_381::pairing(l0, ck.g2);
+                let com1 = Bls12_381::pairing(l1, ck.g2);
+                for i in 0..num {
+                    let _msg = sender.send_preprocess(rng, i, m0, m1, com0, com1);
+                }
             })
         });
     }
     send_benchmarks.finish();
 
-    let mut recv_benchmarks = c.benchmark_group(format!("{0}/recv", name));
+    let mut recv_benchmarks = c.benchmark_group(format!("{0}/recv_all", name));
 
     for log_len in MIN_LOG_SIZE..=MAX_LOG_SIZE {
         let rng = &mut test_rng();
@@ -83,12 +92,14 @@ fn laconic_ot_benchmarks(c: &mut Criterion) {
 
         let sender = LaconicOTSender::new(&ck, recv.commitment());
 
-        let i = rng.gen_range(0..num);
-        let msg = sender.send(rng, i, m0, m1);
+        // Simulate all sends
+        let msgs: Vec<_> = (0..num).map(|i| sender.send(rng, i, m0, m1)).collect();
 
         recv_benchmarks.bench_with_input(BenchmarkId::from_parameter(log_len), &log_len, |b, _| {
             b.iter(|| {
-                let _res = recv.recv(i, msg.clone());
+                for i in 0..num {
+                    let _res = recv.recv(i, msgs[i].clone());
+                }
             })
         });
     }

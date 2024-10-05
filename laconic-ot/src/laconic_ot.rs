@@ -1,7 +1,9 @@
+use std::sync::mpsc::Receiver;
+
 use crate::kzg_utils::plain_kzg_com;
 use crate::{kzg_fk_open::all_openings_single, kzg_types::CommitmentKey};
 
-use ark_ec::pairing::Pairing;
+use ark_ec::pairing::{Pairing, PairingOutput};
 use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
 use ark_serialize::CanonicalSerialize;
 use ark_std::One;
@@ -120,6 +122,41 @@ impl<'a, E: Pairing, D: EvaluationDomain<E::ScalarField>> LaconicOTSender<'a, E,
         Self { ck, com }
     }
 
+    pub fn send_preprocess<R: Rng>(
+        &self,
+        rng: &mut R,
+        i: usize,
+        m0: [u8; MSG_SIZE],
+        m1: [u8; MSG_SIZE],
+        com0: PairingOutput<E>,
+        com1: PairingOutput<E>,
+    ) -> Msg<E> {
+        let x = self.ck.domain.element(i);
+        let r0 = E::ScalarField::rand(rng);
+        let r1 = E::ScalarField::rand(rng);
+
+        let g2 = self.ck.g2;
+        let tau = self.ck.r;
+
+        // m0, m1
+        let msk0 = com0 * r0;
+        let msk1 = com1 * r1;
+
+        // h0, h1
+        let g2x = g2 * x;
+        let cm: E::G2 = Into::<E::G2>::into(tau) - g2x;
+        let h0: E::G2 = cm * r0;
+        let h1: E::G2 = cm * r1;
+
+        // encapsulate the messages
+        Msg {
+            h: [
+                (h0.into(), encrypt::<E, MSG_SIZE>(msk0.0, &m0)),
+                (h1.into(), encrypt::<E, MSG_SIZE>(msk1.0, &m1)),
+            ],
+        }
+    }
+
     pub fn send<R: Rng>(
         &self,
         rng: &mut R,
@@ -168,12 +205,21 @@ fn test_laconic_ot() {
     let degree = 4;
     let ck = CommitmentKey::<Bls12_381, Radix2EvaluationDomain<Fr>>::setup(rng, degree).unwrap();
 
-    let sender = LaconicOTRecv::new(&ck, &[Choice::Zero, Choice::One, Choice::Zero, Choice::One]);
-    let receiver = LaconicOTSender::new(&ck, sender.commitment());
+    let receiver = LaconicOTRecv::new(&ck, &[Choice::Zero, Choice::One, Choice::Zero, Choice::One]);
+    let sender = LaconicOTSender::new(&ck, receiver.commitment());
 
     let m0 = [0u8; MSG_SIZE];
     let m1 = [1u8; MSG_SIZE];
-    let msg = receiver.send(rng, 0, m0, m1);
-    let res = sender.recv(0, msg);
+
+    // precompute pairing
+    let l0 = receiver.commitment();
+    let l1 = receiver.commitment() - sender.ck.u[0];
+
+    // m0, m1
+    let com0 = Bls12_381::pairing(l0, receiver.ck.g2);
+    let com1 = Bls12_381::pairing(l1, receiver.ck.g2);
+
+    let msg = sender.send_preprocess(rng, 0, m0, m1, com0, com1);
+    let res = receiver.recv(0, msg);
     assert_eq!(res, m0);
 }
