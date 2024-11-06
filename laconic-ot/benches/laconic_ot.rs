@@ -1,5 +1,5 @@
 use ark_bls12_381::{Bls12_381, Fr};
-use ark_ec::pairing::Pairing;
+use ark_ec::{pairing::Pairing, Group};
 use ark_poly::Radix2EvaluationDomain;
 use ark_std::rand::Rng;
 use ark_std::test_rng;
@@ -65,8 +65,21 @@ fn laconic_ot_benchmarks(c: &mut Criterion) {
                 // m0, m1
                 let com0 = Bls12_381::pairing(l0, ck.g2);
                 let com1 = Bls12_381::pairing(l1, ck.g2);
+
+                let mut com0_precomp = vec![(com0, -com0)];
+                let mut com1_precomp = vec![(com1, -com1)];
+                for _ in 1..381 {
+                    let com0_square = *com0_precomp.last().unwrap().0.clone().double_in_place();
+                    let com1_square = *com1_precomp.last().unwrap().0.clone().double_in_place();
+                    let com0_square_inv = *com0_precomp.last().unwrap().1.clone().double_in_place();
+                    let com1_square_inv = *com1_precomp.last().unwrap().1.clone().double_in_place();
+                    com0_precomp.push((com0_square, com0_square_inv));
+                    com1_precomp.push((com1_square, com1_square_inv));
+                }
+
                 for i in 0..num {
-                    let _msg = sender.send_preprocess(rng, i, m0, m1, com0, com1);
+                    let _msg =
+                        sender.send_precompute_naf(rng, i, m0, m1, &com0_precomp, &com1_precomp);
                 }
             })
         });
